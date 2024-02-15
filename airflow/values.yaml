@@ -1,0 +1,824 @@
+# Use standard naming for all resources using airflow.fullname template
+# Consider removing this later and default it to true
+# to make this chart follow standard naming conventions using the fullname template.
+# For now this is an opt-in switch for backwards compatibility to leverage the standard naming convention
+# and being able to use fully fullnameOverride and nameOverride in all resources
+# For new installations - it is recommended to set it to True to follow standard naming conventions
+# For existing installations, this will rename and redeploy your resources with the new names. Be aware that
+# this will recreate your deployment/statefulsets along with their persistent volume claims and data storage
+# migration may be needed to keep your old data
+#
+# Note:fernet-key,redis-password and broker-url secrets don't use this logic yet,
+# as this may break existing installations due to how they get installed via pre-install hook.
+useStandardNaming: false
+
+# Airflow home directory
+# Used for mount paths
+airflowHome: /opt/airflow
+
+# Airflow version (Used to make some decisions based on Airflow Version being deployed)
+airflowVersion: "2.8.1"
+
+# Images
+images:
+  airflow:
+    repository: lukedappleton/airflow-docker
+    tag: latest
+    pullPolicy: IfNotPresent
+  useDefaultImageForMigration: true
+  # timeout (in seconds) for airflow-migrations to complete
+  migrationsWaitTimeout: 60
+  statsd:
+    repository: quay.io/prometheus/statsd-exporter
+    tag: v0.26.0
+    pullPolicy: IfNotPresent
+  redis:
+    repository: redis
+    tag: 7-bookworm
+    pullPolicy: IfNotPresent
+  gitSync:
+    repository: registry.k8s.io/git-sync/git-sync
+    tag: v4.1.0
+    pullPolicy: IfNotPresent
+
+# Ingress configuration
+ingress:
+  # Enable all ingress resources (deprecated - use ingress.web.enabled and ingress.flower.enabled)
+  enabled: ~
+
+  # Configs for the Ingress of the web Service
+  web:
+    # Enable web ingress resource
+    enabled: false
+
+    # Annotations for the web Ingress
+    annotations: {}
+
+    # The path for the web Ingress
+    path: "/"
+
+    # The pathType for the above path (used only with Kubernetes v1.19 and above)
+    pathType: "ImplementationSpecific"
+
+    # The hostname for the web Ingress (Deprecated - renamed to `ingress.web.hosts`)
+    host: ""
+
+    # The hostnames or hosts configuration for the web Ingress
+    hosts: []
+    #   # The hostname for the web Ingress (can be templated)
+    # - name: ""
+    #   # configs for web Ingress TLS
+    #   tls:
+    #     # Enable TLS termination for the web Ingress
+    #     enabled: false
+    #     # the name of a pre-created Secret containing a TLS private key and certificate
+    #     secretName: ""
+
+    # The Ingress Class for the web Ingress (used only with Kubernetes v1.19 and above)
+    ingressClassName: ""
+
+    # configs for web Ingress TLS (Deprecated - renamed to `ingress.web.hosts[*].tls`)
+    tls:
+      # Enable TLS termination for the web Ingress
+      enabled: false
+      # the name of a pre-created Secret containing a TLS private key and certificate
+      secretName: ""
+
+    # HTTP paths to add to the web Ingress before the default path
+    precedingPaths: []
+
+    # Http paths to add to the web Ingress after the default path
+    succeedingPaths: []
+
+  # Configs for the Ingress of the flower Service
+  flower:
+    # Enable web ingress resource
+    enabled: false
+
+# Network policy configuration
+networkPolicies:
+  # Enabled network policies
+  enabled: false
+
+# Enable RBAC (default on most clusters these days)
+rbac:
+  # Specifies whether RBAC resources should be created
+  create: true
+  createSCCRoleBinding: false
+
+# Airflow executor
+# One of: LocalExecutor, LocalKubernetesExecutor, CeleryExecutor, KubernetesExecutor, CeleryKubernetesExecutor
+executor: "KubernetesExecutor"
+
+# If this is true and using LocalExecutor/KubernetesExecutor/CeleryKubernetesExecutor, the scheduler's
+# service account will have access to communicate with the api-server and launch pods.
+# If this is true and using CeleryExecutor/KubernetesExecutor/CeleryKubernetesExecutor, the workers
+# will be able to launch pods.
+allowPodLaunching: true
+
+# Environment variables for all airflow containers
+env: []
+# - name: ""
+#   value: ""
+
+# Secrets for all airflow containers
+secret: []
+# - envName: ""
+#   secretName: ""
+#   secretKey: ""
+
+# Enables selected built-in secrets that are set via environment variables by default.
+# Those secrets are provided by the Helm Chart secrets by default but in some cases you
+# might want to provide some of those variables with _CMD or _SECRET variable, and you should
+# in this case disable setting of those variables by setting the relevant configuration to false.
+enableBuiltInSecretEnvVars:
+  AIRFLOW__CORE__FERNET_KEY: true
+  # For Airflow <2.3, backward compatibility; moved to [database] in 2.3
+  AIRFLOW__CORE__SQL_ALCHEMY_CONN: true
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: true
+  AIRFLOW_CONN_AIRFLOW_DB: true
+  AIRFLOW__WEBSERVER__SECRET_KEY: true
+
+# Airflow database & redis config
+data:
+  # If secret names are provided, use those secrets
+  # These secrets must be created manually, eg:
+  #
+  # kind: Secret
+  # apiVersion: v1
+  # metadata:
+  #   name: custom-airflow-metadata-secret
+  # type: Opaque
+  # data:
+  #   connection: base64_encoded_connection_string
+
+  metadataSecretName: ~
+  # When providing secret names and using the same database for metadata and
+  # result backend, for Airflow < 2.4.0 it is necessary to create a separate
+  # secret for result backend but with a db+ scheme prefix.
+  # For Airflow >= 2.4.0 it is possible to not specify the secret again,
+  # as Airflow will use sql_alchemy_conn with a db+ scheme prefix by default.
+  resultBackendSecretName: ~
+  brokerUrlSecretName: ~
+
+  # Otherwise pass connection values in
+  metadataConnection:
+    user: postgres
+    pass: postgres
+    protocol: postgresql
+    host: ~
+    port: 5432
+    db: postgres
+    sslmode: disable
+  # resultBackendConnection defaults to the same database as metadataConnection
+  resultBackendConnection: ~
+  # or, you can use a different database
+  # resultBackendConnection:
+  #   user: postgres
+  #   pass: postgres
+  #   protocol: postgresql
+  #   host: ~
+  #   port: 5432
+  #   db: postgres
+  #   sslmode: disable
+  # Note: brokerUrl can only be set during install, not upgrade
+  brokerUrl: ~
+
+# Fernet key settings
+# Note: fernetKey can only be set during install, not upgrade
+fernetKey: ~
+fernetKeySecretName: ~
+
+# Flask secret key for Airflow Webserver: `[webserver] secret_key` in airflow.cfg
+webserverSecretKey: ~
+webserverSecretKeySecretName: ~
+
+# Airflow Worker Config
+workers:
+  # Number of airflow celery workers in StatefulSet
+  replicas: 1
+  # Max number of old replicasets to retain
+  revisionHistoryLimit: ~
+
+  # Command to use when running Airflow workers (templated).
+  command: ~
+  # Args to use when running Airflow workers (templated).
+  args:
+    - "bash"
+    - "-c"
+    # The format below is necessary to get `helm lint` happy
+    - |-
+      exec \
+      airflow {{ semverCompare ">=2.0.0" .Values.airflowVersion | ternary "celery worker" "worker" }}
+
+  # If the worker stops responding for 5 minutes (5*60s) kill the
+  # worker and let Kubernetes restart it
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 10
+    timeoutSeconds: 20
+    failureThreshold: 5
+    periodSeconds: 60
+    command: ~
+
+  # Update Strategy when worker is deployed as a StatefulSet
+  updateStrategy: ~
+  # Update Strategy when worker is deployed as a Deployment
+  strategy:
+    rollingUpdate:
+      maxSurge: "100%"
+      maxUnavailable: "50%"
+
+  # Allow HPA (KEDA must be disabled).
+  hpa:
+    enabled: false
+
+    # Minimum number of workers created by HPA
+    minReplicaCount: 0
+
+    # Maximum number of workers created by HPA
+    maxReplicaCount: 5
+
+    # Specifications for which to use to calculate the desired replica count
+    metrics:
+      - type: Resource
+        resource:
+          name: cpu
+          target:
+            type: Utilization
+            averageUtilization: 80
+
+    # Scaling behavior of the target in both Up and Down directions
+    behavior: {}
+
+  persistence:
+    # Enable persistent volumes
+    enabled: true
+    # Volume size for worker StatefulSet
+    size: 100Gi
+    # If using a custom storageClass, pass name ref to all statefulSets here
+    storageClassName:
+    # Execute init container to chown log directory.
+    # This is currently only needed in kind, due to usage
+    # of local-path provisioner.
+    fixPermissions: false
+    # Annotations to add to worker volumes
+    annotations: {}
+    # Detailed default security context for persistence for container level
+    securityContexts:
+      container: {}
+    # container level lifecycle hooks
+    containerLifecycleHooks: {}
+
+  # Grace period for tasks to finish after SIGTERM is sent from kubernetes
+  terminationGracePeriodSeconds: 600
+
+  # This setting tells kubernetes that its ok to evict
+  # when it wants to scale a node down.
+  safeToEvict: true
+
+  logGroomerSidecar:
+    # Whether to deploy the Airflow worker log groomer sidecar.
+    enabled: true
+    # Command to use when running the Airflow worker log groomer sidecar (templated).
+    command: ~
+    # Args to use when running the Airflow worker log groomer sidecar (templated).
+    args: ["bash", "/clean-logs"]
+    # Number of days to retain logs
+    retentionDays: 15
+    resources:
+     limits:
+      cpu: 100m
+      memory: 128Mi
+     requests:
+      cpu: 100m
+      memory: 128Mi
+
+  waitForMigrations:
+    # Whether to create init container to wait for db migrations
+    enabled: true
+
+# Airflow scheduler settings
+scheduler:
+  enabled: true
+  # If the scheduler stops heartbeating for 5 minutes (5*60s) kill the
+  # scheduler and let Kubernetes restart it
+  livenessProbe:
+    initialDelaySeconds: 10
+    timeoutSeconds: 20
+    failureThreshold: 5
+    periodSeconds: 60
+    command: ~
+  # Wait for at most 10 minutes (6*10s) for the scheduler container to startup.
+  # livenessProbe kicks in after the startup
+  startupProbe:
+    failureThreshold: 6
+    periodSeconds: 10
+    timeoutSeconds: 20
+    command: ~
+  # Airflow 2.0 allows users to run multiple schedulers,
+  # However this feature is only recommended for MySQL 8+ and Postgres
+  replicas: 1
+  # Max number of old replicasets to retain
+  revisionHistoryLimit: ~
+
+  # Command to use when running the Airflow scheduler (templated).
+  command: ~
+  # Args to use when running the Airflow scheduler (templated).
+  args: ["bash", "-c", "exec airflow scheduler"]
+
+
+  resources:
+   limits:
+    cpu: 100m
+    memory: 128Mi
+   requests:
+    cpu: 100m
+    memory: 128Mi
+
+  # This setting tells kubernetes that its ok to evict
+  # when it wants to scale a node down.
+  safeToEvict: true
+
+  logGroomerSidecar:
+    # Whether to deploy the Airflow scheduler log groomer sidecar.
+    enabled: true
+    # Command to use when running the Airflow scheduler log groomer sidecar (templated).
+    command: ~
+    # Args to use when running the Airflow scheduler log groomer sidecar (templated).
+    args: ["bash", "/clean-logs"]
+    # Number of days to retain logs
+    retentionDays: 15
+    resources:
+     limits:
+      cpu: 100m
+      memory: 128Mi
+     requests:
+      cpu: 100m
+      memory: 128Mi
+    # Detailed default security context for logGroomerSidecar for container level
+    securityContexts:
+      container: {}
+    # container level lifecycle hooks
+    containerLifecycleHooks: {}
+
+  waitForMigrations:
+    # Whether to create init container to wait for db migrations
+    enabled: true
+
+# Airflow database migration job settings
+migrateDatabaseJob:
+  enabled: true
+  # Limit the lifetime of the job object after it finished execution.
+  ttlSecondsAfterFinished: 300
+  # Command to use when running the migrate database job (templated).
+  command: ~
+  # Args to use when running the migrate database job (templated).
+  args:
+    - "bash"
+    - "-c"
+    - >-
+      exec \
+
+      airflow {{ semverCompare ">=2.7.0" .Values.airflowVersion
+      | ternary "db migrate" (semverCompare ">=2.0.0" .Values.airflowVersion
+      | ternary "db upgrade" "upgradedb") }}
+
+  resources:
+   limits:
+    cpu: 100m
+    memory: 128Mi
+   requests:
+    cpu: 100m
+    memory: 128Mi
+
+  # In case you need to disable the helm hooks that create the jobs after install.
+  # Disable this if you are using ArgoCD for example
+  useHelmHooks: true
+  applyCustomEnv: true
+
+# Airflow webserver settings
+webserver:
+  enabled: true
+  # Add custom annotations to the webserver configmap
+  allowPodLogReading: true
+  livenessProbe:
+    initialDelaySeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 5
+    periodSeconds: 10
+    scheme: HTTP
+
+  readinessProbe:
+    initialDelaySeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 5
+    periodSeconds: 10
+    scheme: HTTP
+
+  startupProbe:
+    timeoutSeconds: 20
+    failureThreshold: 6
+    periodSeconds: 10
+    scheme: HTTP
+
+  # Number of webservers
+  replicas: 1
+
+  # Command to use when running the Airflow webserver (templated).
+  command: ~
+  # Args to use when running the Airflow webserver (templated).
+  args: ["bash", "-c", "exec airflow webserver"]
+
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Create initial user.
+  defaultUser:
+    enabled: true
+    role: Admin
+    username: admin
+    email: admin@example.com
+    firstName: admin
+    lastName: user
+    password: admin
+
+  waitForMigrations:
+    # Whether to create init container to wait for db migrations
+    enabled: true
+
+# Airflow Triggerer Config
+triggerer:
+  enabled: true
+  # Number of airflow triggerers in the deployment
+  replicas: 1
+  # Max number of old replicasets to retain
+  revisionHistoryLimit: ~
+
+  # Command to use when running Airflow triggerers (templated).
+  command: ~
+  # Args to use when running Airflow triggerer (templated).
+  args: ["bash", "-c", "exec airflow triggerer"]
+
+  # Update Strategy when triggerer is deployed as a StatefulSet
+  updateStrategy: ~
+  # Update Strategy when triggerer is deployed as a Deployment
+  strategy:
+    rollingUpdate:
+      maxSurge: "100%"
+      maxUnavailable: "50%"
+
+  # If the triggerer stops heartbeating for 5 minutes (5*60s) kill the
+  # triggerer and let Kubernetes restart it
+  livenessProbe:
+    initialDelaySeconds: 10
+    timeoutSeconds: 20
+    failureThreshold: 5
+    periodSeconds: 60
+    command: ~
+
+  persistence:
+    # Enable persistent volumes
+    enabled: true
+    # Volume size for triggerer StatefulSet
+    size: 100Gi
+
+  resources:
+   limits:
+    cpu: 100m
+    memory: 128Mi
+   requests:
+    cpu: 100m
+    memory: 128Mi
+
+  # Grace period for triggerer to finish after SIGTERM is sent from kubernetes
+  terminationGracePeriodSeconds: 60
+
+  # This setting tells kubernetes that its ok to evict
+  # when it wants to scale a node down.
+  safeToEvict: true
+
+  logGroomerSidecar:
+    # Whether to deploy the Airflow triggerer log groomer sidecar.
+    enabled: true
+    # Command to use when running the Airflow triggerer log groomer sidecar (templated).
+    command: ~
+    # Args to use when running the Airflow triggerer log groomer sidecar (templated).
+    args: ["bash", "/clean-logs"]
+    # Number of days to retain logs
+    retentionDays: 15
+    resources:
+     limits:
+      cpu: 100m
+      memory: 128Mi
+     requests:
+      cpu: 100m
+      memory: 128Mi
+
+  waitForMigrations:
+    # Whether to create init container to wait for db migrations
+    enabled: true
+
+# Airflow Dag Processor Config
+dagProcessor:
+  enabled: false
+  # Number of airflow dag processors in the deployment
+  replicas: 1
+  # Max number of old replicasets to retain
+  revisionHistoryLimit: ~
+
+  # Command to use when running Airflow dag processors (templated).
+  command: ~
+  # Args to use when running Airflow dag processor (templated).
+  args: ["bash", "-c", "exec airflow dag-processor"]
+
+  # Update Strategy for dag processors
+  strategy:
+    rollingUpdate:
+      maxSurge: "100%"
+      maxUnavailable: "50%"
+
+  # If the dag processor stops heartbeating for 5 minutes (5*60s) kill the
+  # dag processor and let Kubernetes restart it
+  livenessProbe:
+    initialDelaySeconds: 10
+    timeoutSeconds: 20
+    failureThreshold: 5
+    periodSeconds: 60
+    command: ~
+
+  resources:
+   limits:
+    cpu: 100m
+    memory: 128Mi
+   requests:
+    cpu: 100m
+    memory: 128Mi
+
+  # Grace period for dag processor to finish after SIGTERM is sent from kubernetes
+  terminationGracePeriodSeconds: 60
+
+  # This setting tells kubernetes that its ok to evict
+  # when it wants to scale a node down.
+  safeToEvict: true
+
+  logGroomerSidecar:
+    # Whether to deploy the Airflow dag processor log groomer sidecar.
+    enabled: true
+    # Command to use when running the Airflow dag processor log groomer sidecar (templated).
+    command: ~
+    # Args to use when running the Airflow dag processor log groomer sidecar (templated).
+    args: ["bash", "/clean-logs"]
+    # Number of days to retain logs
+    retentionDays: 15
+    resources:
+     limits:
+      cpu: 100m
+      memory: 128Mi
+     requests:
+      cpu: 100m
+      memory: 128Mi
+    securityContexts:
+      container: {}
+
+  waitForMigrations:
+    # Whether to create init container to wait for db migrations
+    enabled: true
+
+# Flower settings
+flower:
+  # Enable flower.
+  # If True, and using CeleryExecutor/CeleryKubernetesExecutor, will deploy flower app.
+  enabled: false
+
+# StatsD settings
+statsd:
+  enabled: true
+  # Arguments for StatsD exporter command.
+  args: ["--statsd.mapping-config=/etc/statsd-exporter/mappings.yml"]
+
+  uid: 65534
+  # When not set, `statsd.uid` will be used
+
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# PgBouncer settings
+pgbouncer:
+  # Enable PgBouncer
+  enabled: false
+
+# Configuration for the redis provisioned by the chart
+redis:
+  enabled: true
+  terminationGracePeriodSeconds: 600
+
+  persistence:
+    # Enable persistent volumes
+    enabled: true
+    # Volume size for worker StatefulSet
+    size: 1Gi
+
+  resources:
+   limits:
+    cpu: 100m
+    memory: 128Mi
+   requests:
+    cpu: 100m
+    memory: 128Mi
+
+  # If set use as redis secret. Make sure to also set data.brokerUrlSecretName value.
+  passwordSecretName: ~
+
+  # Else, if password is set, create secret with it,
+  # Otherwise a new password will be generated on install
+  # Note: password can only be set during install, not upgrade.
+  password: ~
+
+  # This setting tells kubernetes that its ok to evict
+  # when it wants to scale a node down.
+  safeToEvict: true
+
+# Elasticsearch logging configuration
+elasticsearch:
+  # Enable elasticsearch task logging
+  enabled: false
+
+# All ports used by chart
+ports:
+  flowerUI: 5555
+  airflowUI: 8080
+  workerLogs: 8793
+  triggererLogs: 8794
+  redisDB: 6379
+  statsdIngest: 9125
+  statsdScrape: 9102
+  pgbouncer: 6543
+  pgbouncerScrape: 9127
+
+# This runs as a CronJob to cleanup old pods.
+cleanup:
+  enabled: false
+
+# Configuration for postgresql subchart
+# Not recommended for production
+postgresql:
+  enabled: true
+  auth:
+    enablePostgresUser: true
+    postgresPassword: postgres
+    username: ""
+    password: ""
+
+# Config settings to go into the mounted airflow.cfg
+#
+# Please note that these values are passed through the `tpl` function, so are
+# all subject to being rendered as go templates. If you need to include a
+# literal `{{` in a value, it must be expressed like this:
+#
+#    a: '{{ "{{ not a template }}" }}'
+#
+# Do not set config containing secrets via plain text values, use Env Var or k8s secret object
+# yamllint disable rule:line-length
+config:
+  core:
+    dags_folder: '{{ include "airflow_dags" . }}'
+    # This is ignored when used with the official Docker image
+    load_examples: 'False'
+    executor: '{{ .Values.executor }}'
+    # For Airflow 1.10, backward compatibility; moved to [logging] in 2.0
+    colored_console_log: 'False'
+    remote_logging: '{{- ternary "True" "False" .Values.elasticsearch.enabled }}'
+  logging:
+    remote_logging: '{{- ternary "True" "False" .Values.elasticsearch.enabled }}'
+    colored_console_log: 'False'
+  metrics:
+    statsd_on: '{{ ternary "True" "False" .Values.statsd.enabled }}'
+    statsd_port: 9125
+    statsd_prefix: airflow
+    statsd_host: '{{ printf "%s-statsd" (include "airflow.fullname" .) }}'
+  webserver:
+    enable_proxy_fix: 'True'
+    # For Airflow 1.10
+    rbac: 'True'
+  celery:
+    flower_url_prefix: '{{ ternary "" .Values.ingress.flower.path (eq .Values.ingress.flower.path "/") }}'
+    worker_concurrency: 16
+  scheduler:
+    standalone_dag_processor: '{{ ternary "True" "False" .Values.dagProcessor.enabled }}'
+    # statsd params included for Airflow 1.10 backward compatibility; moved to [metrics] in 2.0
+    statsd_on: '{{ ternary "True" "False" .Values.statsd.enabled }}'
+    statsd_port: 9125
+    statsd_prefix: airflow
+    statsd_host: '{{ printf "%s-statsd" (include "airflow.fullname" .) }}'
+    # `run_duration` included for Airflow 1.10 backward compatibility; removed in 2.0.
+    run_duration: 41460
+  elasticsearch:
+    json_format: 'True'
+    log_id_template: "{dag_id}_{task_id}_{execution_date}_{try_number}"
+  elasticsearch_configs:
+    max_retries: 3
+    timeout: 30
+    retry_timeout: 'True'
+  kerberos:
+    keytab: '{{ .Values.kerberos.keytabPath }}'
+    reinit_frequency: '{{ .Values.kerberos.reinitFrequency }}'
+    principal: '{{ .Values.kerberos.principal }}'
+    ccache: '{{ .Values.kerberos.ccacheMountPath }}/{{ .Values.kerberos.ccacheFileName }}'
+  celery_kubernetes_executor:
+    kubernetes_queue: 'kubernetes'
+  # The `kubernetes` section is deprecated in Airflow >= 2.5.0 due to an airflow.cfg schema change.
+  # The `kubernetes` section can be removed once the helm chart no longer supports Airflow < 2.5.0.
+  kubernetes:
+    namespace: '{{ .Release.Namespace }}'
+    # The following `airflow_` entries are for Airflow 1, and can be removed when it is no longer supported.
+    airflow_configmap: '{{ include "airflow_config" . }}'
+    airflow_local_settings_configmap: '{{ include "airflow_config" . }}'
+    pod_template_file: '{{ include "airflow_pod_template_file" . }}/pod_template_file.yaml'
+    worker_container_repository: '{{ .Values.images.airflow.repository | default .Values.defaultAirflowRepository }}'
+    worker_container_tag: '{{ .Values.images.airflow.tag | default .Values.defaultAirflowTag }}'
+    multi_namespace_mode: '{{ ternary "True" "False" .Values.multiNamespaceMode }}'
+  # The `kubernetes_executor` section duplicates the `kubernetes` section in Airflow >= 2.5.0 due to an airflow.cfg schema change.
+  kubernetes_executor:
+    namespace: '{{ .Release.Namespace }}'
+    pod_template_file: '{{ include "airflow_pod_template_file" . }}/pod_template_file.yaml'
+    worker_container_repository: '{{ .Values.images.airflow.repository | default .Values.defaultAirflowRepository }}'
+    worker_container_tag: '{{ .Values.images.airflow.tag | default .Values.defaultAirflowTag }}'
+    multi_namespace_mode: '{{ ternary "True" "False" .Values.multiNamespaceMode }}'
+  triggerer:
+    default_capacity: 1000
+# yamllint enable rule:line-length
+
+# Git sync
+dags:
+  # Where dags volume will be mounted. Works for both persistence and gitSync.
+  # If not specified, dags mount path will be set to $AIRFLOW_HOME/dags
+  mountPath: ~
+  persistence:
+    enabled: false
+  gitSync:
+    enabled: true
+    # git repo clone url
+    # ssh example: git@github.com:apache/airflow.git
+    # https example: https://github.com/apache/airflow.git
+    repo: git@github.com:lukedappleton/airflow-code.git
+    branch: main
+    rev: HEAD
+    # the number of consecutive failures allowed before aborting
+    maxFailures: 0
+    # subpath within the repo where dags are located
+    # should be "" if dags are at repo root
+    subPath: "tests/dags"
+    # If you are using an ssh clone url, you can load
+    # the ssh private key to a k8s secret like the one below
+    #   ---
+    #   apiVersion: v1
+    #   kind: Secret
+    #   metadata:
+    #     name: airflow-ssh-secret
+    #   data:
+    #     # key needs to be gitSshKey
+    #     gitSshKey: <base64_encoded_data>
+    # and specify the name of the secret below
+    # sshKeySecret: airflow-ssh-secret
+    #
+    # If you are using an ssh private key, you can additionally
+    # specify the content of your known_hosts file, example:
+    #
+    # knownHosts: |
+    #    <host1>,<ip1> <key1>
+    #    <host2>,<ip2> <key2>
+
+    # interval between git sync attempts in seconds
+    # high values are more likely to cause DAGs to become out of sync between different components
+    # low values cause more traffic to the remote git repository
+    # Go-style duration string (e.g. "100ms" or "0.1s" = 100ms).
+    # For backwards compatibility, wait will be used if it is specified.
+    period: 5s
+    wait: ~
+
+    containerName: git-sync
+    uid: 65533
+
+    resources:
+     limits:
+      cpu: 100m
+      memory: 128Mi
+     requests:
+      cpu: 100m
+      memory: 128Mi
+
+logs:
+  persistence:
+    # Enable persistent volume for storing logs
+    enabled: false
